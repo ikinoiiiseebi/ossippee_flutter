@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../components/ToiletDetailPanel.dart';
 import '../components/ToiletFilterDialog.dart';
@@ -29,43 +30,53 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // 仮データ
+  // Firestore から取得したトイレ情報リスト
+  List<Map<String, dynamic>> toiletList = [];
   int selectedToiletIndex = -1;
-  List<Map<String, dynamic>> toiletList = [
-    {
-      'name': '駅前トイレ',
-      'lat': 35.68,
-      'lng': 139.76,
-      'distance': 120,
-      'rating': 4.0,
-      'features': ['ウォシュレット', '洋式', '多目的'],
-      'address': '東京都千代田区丸の内1-1-1',
-      'cleanliness': 4,
-      'comments': [
-        {'user': 'Taro', 'rating': 4, 'comment': 'きれいでした'},
-      ],
-      'images': []
-    },
-    {
-      'name': '公園トイレ',
-      'lat': 35.684,
-      'lng': 139.758,
-      'distance': 350,
-      'rating': 3.0,
-      'features': ['和式'],
-      'address': '東京都千代田区丸の内2-2-2',
-      'cleanliness': 3,
-      'comments': [
-        {'user': 'Hanako', 'rating': 3, 'comment': 'まあまあです'},
-      ],
-      'images': []
-    },
-  ];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this, initialIndex: 0);
+    _tabController = TabController(length: 3, vsync: this);
+
+    // Firestore コレクション 'toilets' をリアルタイム購読
+    FirebaseFirestore.instance
+        .collection('toilets')
+        .snapshots()
+        .listen((snapshot) {
+      setState(() {
+        toiletList = snapshot.docs.map((doc) {
+          final data = doc.data();
+          // 安全なパース
+          double safeLat =
+              (data['lat'] is num) ? (data['lat'] as num).toDouble() : 0.0;
+          double safeLng =
+              (data['lng'] is num) ? (data['lng'] as num).toDouble() : 0.0;
+          int safeDistance =
+              (data['distance'] is num) ? (data['distance'] as num).toInt() : 0;
+          double safeRating = (data['rating'] is num)
+              ? (data['rating'] as num).toDouble()
+              : 0.0;
+          int safeCleanliness = (data['cleanliness'] is num)
+              ? (data['cleanliness'] as num).toInt()
+              : 0;
+
+          return {
+            'id': doc.id,
+            'name': data['name'] as String? ?? '',
+            'lat': safeLat,
+            'lng': safeLng,
+            'distance': safeDistance,
+            'rating': safeRating,
+            'features': List<String>.from(data['features'] ?? []),
+            'address': data['address'] as String? ?? '',
+            'cleanliness': safeCleanliness,
+            'comments': List<Map<String, dynamic>>.from(data['comments'] ?? []),
+            'images': List<String>.from(data['images'] ?? []),
+          };
+        }).toList();
+      });
+    });
   }
 
   void _onSelectToilet(int index) {
@@ -84,12 +95,18 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
   }
 
   @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Row(
         children: [
+          // サイドパネル
           Container(
-            // サイドパネルエリア
             width: 420,
             decoration: BoxDecoration(
               color: Colors.white,
@@ -121,7 +138,6 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                         icon: Icon(Icons.filter_list),
                         tooltip: 'フィルター',
                         onPressed: () {
-                          // フィルターUI表示
                           showDialog(
                             context: context,
                             builder: (_) => ToiletFilterDialog(),
@@ -131,7 +147,7 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                     ],
                   ),
                 ),
-                // タブ表示部
+                // タブ
                 TabBar(
                   controller: _tabController,
                   tabs: [
@@ -142,18 +158,19 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                   labelColor: Theme.of(context).primaryColor,
                   unselectedLabelColor: Colors.grey,
                 ),
+                // タブビュー
                 Expanded(
                   child: TabBarView(
                     controller: _tabController,
                     children: [
-                      // ①検索結果リスト
+                      // ① 検索結果リスト
                       ToiletListView(
                         toiletList: toiletList,
                         onSelect: _onSelectToilet,
                       ),
-                      // ②トイレ登録フォーム
+                      // ② トイレ登録フォーム
                       ToiletRegisterForm(),
-                      // ③詳細情報パネル
+                      // ③ 詳細パネル
                       selectedToiletIndex == -1
                           ? Center(child: Text("トイレを選択してください"))
                           : ToiletDetailPanel(
@@ -170,34 +187,33 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
             flex: 7,
             child: Stack(
               children: [
-                // 地図
                 GoogleMap(
                   initialCameraPosition: CameraPosition(
                     target: LatLng(35.68, 139.76),
                     zoom: 15,
                   ),
-                  markers: toiletList
-                      .asMap()
-                      .entries
-                      .map((entry) => Marker(
-                            markerId: MarkerId('${entry.key}'),
-                            position:
-                                LatLng(entry.value['lat'], entry.value['lng']),
-                            infoWindow: InfoWindow(
-                              title: entry.value['name'],
-                              snippet: '清潔度: ${entry.value['cleanliness']}',
-                              onTap: () => _onSelectToilet(entry.key),
-                            ),
-                            icon: BitmapDescriptor.defaultMarkerWithHue(
-                                entry.value['cleanliness'] >= 4
-                                    ? BitmapDescriptor.hueBlue
-                                    : BitmapDescriptor.hueRed),
-                          ))
-                      .toSet(),
+                  markers: toiletList.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final t = entry.value;
+                    return Marker(
+                      markerId: MarkerId(t['id']),
+                      position: LatLng(t['lat'], t['lng']),
+                      infoWindow: InfoWindow(
+                        title: t['name'],
+                        snippet: '清潔度: ${t['cleanliness']}',
+                        onTap: () => _onSelectToilet(idx),
+                      ),
+                      icon: BitmapDescriptor.defaultMarkerWithHue(
+                        t['cleanliness'] >= 4
+                            ? BitmapDescriptor.hueBlue
+                            : BitmapDescriptor.hueRed,
+                      ),
+                    );
+                  }).toSet(),
                   myLocationEnabled: true,
                   zoomControlsEnabled: true,
                 ),
-                // 地図上の現在地ボタン
+                // 現在地ボタン
                 Positioned(
                   top: 24,
                   right: 24,
@@ -205,7 +221,7 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                     heroTag: 'currentLocation',
                     child: Icon(Icons.my_location),
                     onPressed: () {
-                      // 現在地に戻るロジック
+                      // 必要に応じて現在地取得ロジックを実装
                     },
                   ),
                 ),
