@@ -50,4 +50,4 @@ build/
 
 .env
 
-/web
+web/index.html
