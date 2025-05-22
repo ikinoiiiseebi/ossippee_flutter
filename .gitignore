@@ -47,3 +47,5 @@ app.*.map.json
 build/
 .idea/
 .vscode/
+
+.env
