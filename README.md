@@ -1,16 +1,14 @@
 # ossippee_flutter
 
-A new Flutter project.
+## デプロイ方法
 
-## Getting Started
+webアプリとしてデプロイしてください
+出来上がったものは`build/web`に出来上がります
+また、base hrefを修正するために以下のようにオプションをつけてください
 
-This project is a starting point for a Flutter application.
+```
+flutter build web --release --base-href "/web/"
+```
 
-A few resources to get you started if this is your first Flutter project:
+出来上がったファイル`build/web`の中身を全てReactプロジェクトの`public`下において下さい
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
