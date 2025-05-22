@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'dart:html' as html; // Flutter Webのみ
 
 // 2. トイレ登録フォーム
 class ToiletRegisterForm extends StatefulWidget {
-  final Function(Map<String, dynamic>) onRegister;
-
-  const ToiletRegisterForm({required this.onRegister});
+  const ToiletRegisterForm({super.key});
 
   @override
   State<ToiletRegisterForm> createState() => _ToiletRegisterFormState();
@@ -12,11 +13,58 @@ class ToiletRegisterForm extends StatefulWidget {
 
 class _ToiletRegisterFormState extends State<ToiletRegisterForm> {
   final _formKey = GlobalKey<FormState>();
-  String? name;
-  String? address;
-  double cleanliness = 3;
-  List<String> features = [];
-  String? comment;
+  String? _name;
+  double _cleanliness = 3;
+  List<String> _features = [];
+  String? _comment;
+  LatLng? _selectedPosition;
+
+  // デフォルトの地図位置（東京駅）
+  final LatLng _initialPos = LatLng(35.68, 139.76);
+
+  // Firestore登録処理
+  Future<void> _registerToilet() async {
+    final userId = html.window.localStorage['userId'];
+    if (userId == 'null' || userId == null || userId.trim().isEmpty) {
+      // 未ログイン・未発行
+      // 新しいIDを発行する、またはエラー・認証誘導
+    }
+    if (_selectedPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('マップ上でピンの位置を選択してください')),
+      );
+      return;
+    }
+    try {
+      final toilets = FirebaseFirestore.instance.collection('toilets');
+      await toilets.add({
+        'name': _name ?? '',
+        'location':
+            GeoPoint(_selectedPosition!.latitude, _selectedPosition!.longitude),
+        'cleanliness': _cleanliness.round(),
+        'features': _features,
+        'comment': _comment ?? '',
+        'createdAt': Timestamp.now(),
+        'createdBy': userId,
+        'images': [],
+        'averageRating': _cleanliness,
+        'commentCount': 0,
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('トイレを登録しました')),
+      );
+      setState(() {
+        _formKey.currentState?.reset();
+        _selectedPosition = null;
+        _features = [];
+        _cleanliness = 3;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('登録に失敗しました: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,22 +75,35 @@ class _ToiletRegisterFormState extends State<ToiletRegisterForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("トイレの写真", style: TextStyle(fontWeight: FontWeight.bold)),
-            OutlinedButton.icon(
-              icon: Icon(Icons.image),
-              label: Text("画像を追加"),
-              onPressed: () {
-                // image picker
-              },
+            Text("マップ上のピンをドラッグして位置を決めてください",
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            SizedBox(height: 12),
+            Container(
+              height: 220,
+              child: GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: _selectedPosition ?? _initialPos,
+                  zoom: 16,
+                ),
+                markers: {
+                  Marker(
+                    markerId: MarkerId('selected'),
+                    position: _selectedPosition ?? _initialPos,
+                    draggable: true,
+                    onDragEnd: (newPos) {
+                      setState(() => _selectedPosition = newPos);
+                    },
+                  ),
+                },
+                onTap: (pos) {
+                  setState(() => _selectedPosition = pos);
+                },
+              ),
             ),
-            SizedBox(height: 20),
+            SizedBox(height: 16),
             TextFormField(
-              decoration: InputDecoration(labelText: "トイレ名 (任意)"),
-              onSaved: (v) => name = v,
-            ),
-            TextFormField(
-              decoration: InputDecoration(labelText: "住所"),
-              onSaved: (v) => address = v,
+              decoration: InputDecoration(labelText: "トイレ名（任意）"),
+              onSaved: (v) => _name = v,
             ),
             SizedBox(height: 16),
             Text("清潔度", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -50,9 +111,9 @@ class _ToiletRegisterFormState extends State<ToiletRegisterForm> {
               min: 1,
               max: 5,
               divisions: 4,
-              value: cleanliness,
-              label: '${cleanliness.round()}',
-              onChanged: (v) => setState(() => cleanliness = v),
+              value: _cleanliness,
+              label: '${_cleanliness.round()}',
+              onChanged: (v) => setState(() => _cleanliness = v),
             ),
             SizedBox(height: 16),
             Text("設備", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -72,7 +133,7 @@ class _ToiletRegisterFormState extends State<ToiletRegisterForm> {
             TextFormField(
               decoration: InputDecoration(labelText: "一言コメント"),
               maxLines: 2,
-              onSaved: (v) => comment = v,
+              onSaved: (v) => _comment = v,
             ),
             SizedBox(height: 16),
             Align(
@@ -81,20 +142,7 @@ class _ToiletRegisterFormState extends State<ToiletRegisterForm> {
                 child: Text("登録する"),
                 onPressed: () {
                   _formKey.currentState?.save();
-                  widget.onRegister({
-                    'name': name ?? '',
-                    'address': address ?? '',
-                    'cleanliness': cleanliness.round(),
-                    'features': features,
-                    'comment': comment ?? '',
-                    // 仮の値
-                    'lat': 35.68,
-                    'lng': 139.76,
-                    'distance': 100,
-                    'rating': cleanliness,
-                    'comments': [],
-                    'images': [],
-                  });
+                  _registerToilet();
                 },
               ),
             ),
@@ -105,16 +153,16 @@ class _ToiletRegisterFormState extends State<ToiletRegisterForm> {
   }
 
   Widget _buildFeatureChip(String feature) {
-    final isSelected = features.contains(feature);
+    final isSelected = _features.contains(feature);
     return FilterChip(
       label: Text(feature),
       selected: isSelected,
       onSelected: (selected) {
         setState(() {
           if (selected) {
-            features.add(feature);
+            _features.add(feature);
           } else {
-            features.remove(feature);
+            _features.remove(feature);
           }
         });
       },

@@ -4,7 +4,6 @@ import '../components/ToiletDetailPanel.dart';
 import '../components/ToiletFilterDialog.dart';
 import '../components/ToiletListView.dart';
 import '../components/ToiletRegisterForm.dart';
-import '../components/ToiletReviewDialog.dart';
 
 class ToiletMapApp extends StatelessWidget {
   @override
@@ -153,14 +152,7 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                         onSelect: _onSelectToilet,
                       ),
                       // ②トイレ登録フォーム
-                      ToiletRegisterForm(
-                        onRegister: (data) {
-                          setState(() {
-                            toiletList.add(data);
-                            _tabController.animateTo(0);
-                          });
-                        },
-                      ),
+                      ToiletRegisterForm(),
                       // ③詳細情報パネル
                       selectedToiletIndex == -1
                           ? Center(child: Text("トイレを選択してください"))
@@ -225,5 +217,3 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
     );
   }
 }
-
-// ----------- 各サブウィジェット -------------
