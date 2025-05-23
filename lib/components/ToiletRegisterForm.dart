@@ -6,7 +6,6 @@ import 'dart:html' as html; // Flutter Webのみ
 import 'package:geolocator/geolocator.dart'; // Position を使用するために追加
 import 'package:flutter_sound/flutter_sound.dart'; // flutter_sound をインポート
 import 'package:permission_handler/permission_handler.dart'; // permission_handler をインポート
-// import 'package:path_provider/path_provider.dart'; // Webでの問題を避けるためコメントアウトまたは削除
 
 // 2. トイレ登録フォーム
 class ToiletRegisterForm extends StatefulWidget {
