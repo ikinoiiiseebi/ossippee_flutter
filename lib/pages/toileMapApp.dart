@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart'; // 追加
 import '../components/ToiletDetailPanel.dart';
 import '../components/ToiletFilterDialog.dart';
 import '../components/ToiletListView.dart';
@@ -37,11 +38,13 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
   List<Marker> _markers = [];
   GoogleMapController? _mapController;
   int selectedToiletIndex = -1;
+  Position? _currentPosition; // 追加: 現在位置を保持
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _determinePosition(); // 追加: 初期位置情報を取得
 
     // Firestore コレクション 'toilets' をリアルタイム購読
     FirebaseFirestore.instance
@@ -118,6 +121,62 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
     });
   }
 
+  // 追加: 現在位置を取得して地図を更新するメソッド
+  Future<void> _determinePosition() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // 位置情報サービスが有効かテストします。
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // 位置情報サービスが有効でない場合、続行できません。
+      // アプリに位置情報サービスを有効にするよう促します。
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('位置情報サービスが無効です。有効にしてください。')));
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        // 権限が拒否された場合、続行できません。
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('位置情報の権限が拒否されました。')));
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      // 権限が永久に拒否されている場合、続行できません。
+      // アプリの設定から権限を変更するようユーザーに促します。
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('位置情報の権限が永久に拒否されています。設定から変更してください。')));
+      return;
+    }
+
+    // ここまで到達した場合、権限が付与されており、
+    // デバイスの位置情報にアクセスできます。
+    try {
+      _currentPosition = await Geolocator.getCurrentPosition();
+      if (_currentPosition != null && _mapController != null) {
+        _mapController!.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: LatLng(
+                  _currentPosition!.latitude, _currentPosition!.longitude),
+              zoom: 15,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('現在位置の取得に失敗しました: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('現在位置の取得に失敗しました。')));
+    }
+  }
+
   // カメラを全マーカーを囲む境界へ移動
   void _moveToMarkers() {
     if (_mapController == null || _markers.isEmpty) return;
@@ -134,7 +193,20 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
     // コントローラ取得後にも一度フィット
-    _moveToMarkers();
+    if (_currentPosition != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target:
+                LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+            zoom: 15,
+          ),
+        ),
+      );
+    } else {
+      // 現在位置がまだ取得できていない場合は、登録マーカーに合わせるか、デフォルト位置のままにする
+      _moveToMarkers();
+    }
   }
 
   void _onSelectToilet(int index) {
@@ -240,11 +312,14 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                 GoogleMap(
                   onMapCreated: _onMapCreated,
                   initialCameraPosition: CameraPosition(
-                    target: LatLng(35.68, 139.76),
+                    target: _currentPosition != null
+                        ? LatLng(_currentPosition!.latitude,
+                            _currentPosition!.longitude)
+                        : LatLng(35.68, 139.76), // 初期位置 (東京駅) または取得した現在位置
                     zoom: 15,
                   ),
                   markers: Set<Marker>.of(_markers),
-                  myLocationEnabled: true,
+                  myLocationEnabled: true, // trueにするとデフォルトの現在位置ボタンが表示される場合がある
                   zoomControlsEnabled: true,
                 ),
                 Positioned(
@@ -253,9 +328,7 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                   child: FloatingActionButton(
                     heroTag: 'currentLocation',
                     child: Icon(Icons.my_location),
-                    onPressed: () {
-                      // 必要に応じて現在地取得ロジックを実装
-                    },
+                    onPressed: _determinePosition, // 変更: 現在位置取得メソッドを呼び出す
                   ),
                 ),
               ],
