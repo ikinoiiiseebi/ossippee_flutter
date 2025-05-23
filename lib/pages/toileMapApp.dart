@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart'; // 追加
+import 'dart:html' as html; // 追加: localStorageのため
 import '../components/ToiletDetailPanel.dart';
 import '../components/ToiletFilterDialog.dart';
 import '../components/ToiletListView.dart';
@@ -278,13 +279,25 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
       return;
     }
 
-    _performFiltering();
+    _performFiltering(); // フィルタリングを実行
 
     setState(() {
       _isSearchingNearby = true;
       _tabController.animateTo(0);
       _isSidePanelVisible = true;
     });
+
+    // フィルタリング結果を待ってからダイアログ表示
+    // _performFiltering内でsetStateが呼ばれるので、その完了を待つために一手間加える
+    // WidgetsBinding.instance.addPostFrameCallbackなどを検討したが、
+    // _nearbyToiletCountが更新された後に表示するのがシンプル
+    if (mounted && _nearbyToiletCount > 0) {
+      _showNearbySearchResultDialog(_nearbyToiletCount);
+    } else if (mounted && _isSearchingNearby) {
+      // 検索モードだが0件の場合
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('近くに利用可能なトイレは見つかりませんでした。')));
+    }
   }
 
   void _clearNearbySearch() {
@@ -297,6 +310,67 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
         _moveToMarkers(_markers); // 全マーカーにフィット
       }
     });
+  }
+
+  // 追加: 近隣検索結果ダイアログ
+  Future<void> _showNearbySearchResultDialog(int count) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false, // ユーザーがダイアログ外をタップしても閉じない
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('検索結果'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text('$count個のトイレが見つかりました。'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('閉じる'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            ElevatedButton(
+              child: Text('次へ'),
+              onPressed: () {
+                final userId = html.window.localStorage['userId'];
+                if (userId == 'null' ||
+                    userId == null ||
+                    userId.trim().isEmpty) {
+                  // 未ログイン・未発行
+                  print('ユーザーIDが取得できませんでした。ログインまたはユーザー登録が必要です。');
+                  // 必要に応じてエラーメッセージをユーザーに表示
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('ユーザーIDが見つかりません。ログインしてください。')));
+                  Navigator.of(context).pop(); // ダイアログを閉じる
+                  return;
+                }
+
+                print(
+                    '「次へ」ボタンが押されました。FirestoreのgameStateを更新します。userId: $userId');
+                FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(userId)
+                    .update({'gameState': 'react'}).then((_) {
+                  print('FirestoreのgameStateをreactに更新しました。');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('gameStateを更新しました。')));
+                }).catchError((error) {
+                  print('FirestoreのgameState更新に失敗しました: $error');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('gameStateの更新に失敗しました: $error')));
+                });
+                Navigator.of(context).pop(); // ダイアログを閉じる
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _onMapCreated(GoogleMapController controller) {
