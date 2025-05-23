@@ -39,6 +39,7 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
   GoogleMapController? _mapController;
   int selectedToiletIndex = -1;
   Position? _currentPosition; // 追加: 現在位置を保持
+  bool _isSidePanelVisible = true; // 追加: サイドパネル表示状態
 
   @override
   void initState() {
@@ -98,6 +99,7 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
               setState(() {
                 selectedToiletIndex = idx;
                 _tabController.animateTo(2);
+                _isSidePanelVisible = true; // 詳細表示時にサイドパネルを開く
               });
             },
           ),
@@ -213,11 +215,29 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
     setState(() {
       selectedToiletIndex = index;
       _tabController.animateTo(2);
+      _isSidePanelVisible = true; // 詳細表示時にサイドパネルを開く
     });
   }
 
-  void _onShowRegisterForm() => _tabController.animateTo(1);
-  void _onShowList() => _tabController.animateTo(0);
+  void _onShowRegisterForm() {
+    setState(() {
+      _tabController.animateTo(1);
+      _isSidePanelVisible = true; // 登録フォーム表示時にサイドパネルを開く
+    });
+  }
+
+  void _onShowList() {
+    setState(() {
+      _tabController.animateTo(0);
+      _isSidePanelVisible = true; // リスト表示時にサイドパネルを開く
+    });
+  }
+
+  void _toggleSidePanel() {
+    setState(() {
+      _isSidePanelVisible = !_isSidePanelVisible;
+    });
+  }
 
   @override
   void dispose() {
@@ -228,85 +248,68 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: Text('トイレマップ口コミサイト'),
+        leading: IconButton(
+          icon: Icon(Icons.menu),
+          onPressed: _toggleSidePanel,
+        ),
+      ),
       body: Row(
         children: [
           // サイドパネル
-          Container(
-            width: 420,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [BoxShadow(blurRadius: 12, color: Colors.black12)],
-            ),
-            child: Column(
-              children: [
-                // 上部操作バー
-                Container(
-                  padding: EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: Icon(Icons.search),
-                          label: Text('近くのトイレ検索'),
-                          onPressed: _onShowList,
-                        ),
-                      ),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: Icon(Icons.add),
-                          label: Text('＋トイレを登録'),
-                          onPressed: _onShowRegisterForm,
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.filter_list),
-                        tooltip: 'フィルター',
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => ToiletFilterDialog(),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
+          AnimatedContainer(
+            duration: Duration(milliseconds: 300),
+            width: _isSidePanelVisible ? 420 : 0,
+            child: SingleChildScrollView(
+              child: Container(
+                width: 420,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [BoxShadow(blurRadius: 12, color: Colors.black12)],
                 ),
-                // タブ
-                TabBar(
-                  controller: _tabController,
-                  tabs: [
-                    Tab(text: "検索結果"),
-                    Tab(text: "トイレ登録"),
-                    Tab(text: "詳細情報"),
+                child: Column(
+                  children: [
+                    // タブ
+                    TabBar(
+                      controller: _tabController,
+                      tabs: [
+                        Tab(text: "検索結果"),
+                        Tab(text: "トイレ登録"),
+                        Tab(text: "詳細情報"),
+                      ],
+                      labelColor: Theme.of(context).primaryColor,
+                      unselectedLabelColor: Colors.grey,
+                    ),
+                    // タブビュー
+                    Container(
+                      height: MediaQuery.of(context).size.height -
+                          kToolbarHeight -
+                          kBottomNavigationBarHeight -
+                          56,
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          ToiletListView(
+                            toiletList: toiletList,
+                            onSelect: _onSelectToilet,
+                          ),
+                          ToiletRegisterForm(),
+                          selectedToiletIndex == -1
+                              ? Center(child: Text("トイレを選択してください"))
+                              : ToiletDetailPanel(
+                                  toilet: toiletList[selectedToiletIndex],
+                                ),
+                        ],
+                      ),
+                    ),
                   ],
-                  labelColor: Theme.of(context).primaryColor,
-                  unselectedLabelColor: Colors.grey,
                 ),
-                // タブビュー
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      ToiletListView(
-                        toiletList: toiletList,
-                        onSelect: _onSelectToilet,
-                      ),
-                      ToiletRegisterForm(),
-                      selectedToiletIndex == -1
-                          ? Center(child: Text("トイレを選択してください"))
-                          : ToiletDetailPanel(
-                              toilet: toiletList[selectedToiletIndex],
-                            ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
           // 地図エリア
           Expanded(
-            flex: 7,
             child: Stack(
               children: [
                 GoogleMap(
@@ -315,26 +318,63 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                     target: _currentPosition != null
                         ? LatLng(_currentPosition!.latitude,
                             _currentPosition!.longitude)
-                        : LatLng(35.68, 139.76), // 初期位置 (東京駅) または取得した現在位置
+                        : LatLng(35.68, 139.76),
                     zoom: 15,
                   ),
                   markers: Set<Marker>.of(_markers),
-                  myLocationEnabled: true, // trueにするとデフォルトの現在位置ボタンが表示される場合がある
+                  myLocationEnabled: true,
                   zoomControlsEnabled: true,
+                  padding: EdgeInsets.only(bottom: 56),
                 ),
                 Positioned(
-                  top: 24,
-                  right: 24,
+                  top: 10,
+                  right: 10,
                   child: FloatingActionButton(
                     heroTag: 'currentLocation',
+                    mini: true,
                     child: Icon(Icons.my_location),
-                    onPressed: _determinePosition, // 変更: 現在位置取得メソッドを呼び出す
+                    onPressed: _determinePosition,
+                  ),
+                ),
+                Positioned(
+                  top: 70,
+                  right: 10,
+                  child: FloatingActionButton(
+                    heroTag: 'filter',
+                    mini: true,
+                    child: Icon(Icons.filter_list),
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (_) => ToiletFilterDialog(),
+                      );
+                    },
                   ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+      bottomNavigationBar: BottomAppBar(
+        child: Container(
+          height: 56.0,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: <Widget>[
+              ElevatedButton.icon(
+                icon: Icon(Icons.search),
+                label: Text('トイレを探す'),
+                onPressed: _onShowList,
+              ),
+              ElevatedButton.icon(
+                icon: Icon(Icons.add_location_alt),
+                label: Text('トイレを登録'),
+                onPressed: _onShowRegisterForm,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
