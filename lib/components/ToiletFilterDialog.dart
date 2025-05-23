@@ -10,14 +10,22 @@ class ToiletFilterDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           CheckboxListTile(
-            value: true,
+            value: isWashletSelected,
             title: Text("ウォシュレット"),
-            onChanged: (_) {},
+            onChanged: (bool? value) {
+              setState(() {
+                isWashletSelected = value ?? false;
+              });
+            },
           ),
           CheckboxListTile(
-            value: false,
+            value: isMultipurposeSelected,
             title: Text("多目的"),
-            onChanged: (_) {},
+            onChanged: (bool? value) {
+              setState(() {
+                isMultipurposeSelected = value ?? false;
+              });
+            },
           ),
           // ... 他にも設備
         ],
