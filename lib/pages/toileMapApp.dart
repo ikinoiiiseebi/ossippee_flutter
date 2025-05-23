@@ -472,7 +472,7 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                       height: MediaQuery.of(context).size.height -
                           kToolbarHeight -
                           kBottomNavigationBarHeight -
-                          56,
+                          56, // AppBar, BottomAppBar, TabBarの高さ分を引く
                       child: TabBarView(
                         controller: _tabController,
                         children: [
@@ -480,7 +480,9 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                             toiletList: displayToiletList, // 表示リストを切り替え
                             onSelect: _onSelectToilet,
                           ),
-                          ToiletRegisterForm(),
+                          ToiletRegisterForm(
+                              currentPosition:
+                                  _currentPosition), // <-- 変更点: currentPositionを渡す
                           selectedToiletIndex != -1 &&
                                   selectedToiletIndex < displayToiletList.length
                               ? ToiletDetailPanel(

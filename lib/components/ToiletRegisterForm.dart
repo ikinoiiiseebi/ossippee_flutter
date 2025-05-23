@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:html' as html; // Flutter Webのみ
+import 'package:geolocator/geolocator.dart'; // Position を使用するために追加
 
 // 2. トイレ登録フォーム
 class ToiletRegisterForm extends StatefulWidget {
-  const ToiletRegisterForm({super.key});
+  final Position? currentPosition; // 追加
+
+  const ToiletRegisterForm({super.key, this.currentPosition}); // 変更
 
   @override
   State<ToiletRegisterForm> createState() => _ToiletRegisterFormState();
@@ -20,7 +23,19 @@ class _ToiletRegisterFormState extends State<ToiletRegisterForm> {
   LatLng? _selectedPosition;
 
   // デフォルトの地図位置（東京駅）
-  final LatLng _initialPos = LatLng(35.68, 139.76);
+  late LatLng _initialPos; // 変更: initStateで設定
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.currentPosition != null) {
+      _initialPos = LatLng(
+          widget.currentPosition!.latitude, widget.currentPosition!.longitude);
+      _selectedPosition = _initialPos;
+    } else {
+      _initialPos = LatLng(35.68, 139.76); // フォールバックとして東京駅
+    }
+  }
 
   // Firestore登録処理
   Future<void> _registerToilet() async {
