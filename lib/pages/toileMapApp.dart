@@ -41,38 +41,40 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
   Position? _currentPosition; // 追加: 現在位置を保持
   bool _isSidePanelVisible = true; // 追加: サイドパネル表示状態
 
+  // 近隣検索関連の追加
+  int _nearbyToiletCount = 0;
+  bool _isSearchingNearby = false;
+  List<Map<String, dynamic>> _filteredToiletList = [];
+  List<Marker> _filteredMarkers = [];
+  final double _searchRadiusMeters = 1000.0; // 検索半径 (メートル)
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _determinePosition(); // 追加: 初期位置情報を取得
+    _determinePosition();
 
-    // Firestore コレクション 'toilets' をリアルタイム購読
     FirebaseFirestore.instance
         .collection('toilets')
         .snapshots()
         .listen((snapshot) {
       final docs = snapshot.docs;
-      // 取得データをリスト／マーカーにマッピング
       final newList = <Map<String, dynamic>>[];
       final newMarkers = <Marker>[];
 
       for (var doc in docs) {
         final data = doc.data();
-        // location フィールドを GeoPoint として取得
         final location = data['location'] as GeoPoint?;
-        // location が null でないことを確認
         if (location == null) continue;
 
-        // GeoPoint から緯度と経度を取得
         final lat = location.latitude;
         final lng = location.longitude;
 
         final entry = {
           'id': doc.id,
           'name': data['name'] as String? ?? '',
-          'lat': lat, // 緯度をセット
-          'lng': lng, // 経度をセット
+          'lat': lat,
+          'lng': lng,
           'distance':
               data['distance'] is num ? (data['distance'] as num).toInt() : 0,
           'rating':
@@ -89,17 +91,18 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
 
         newMarkers.add(Marker(
           markerId: MarkerId(doc.id),
-          position: LatLng(lat, lng), // マーカーの位置をセット
+          position: LatLng(lat, lng),
           infoWindow: InfoWindow(
             title: entry['name'] as String?,
             snippet: '清潔度: ${entry['cleanliness']}',
             onTap: () {
-              // 情報タブに遷移＋選択
-              final idx = newList.indexOf(entry);
+              final idx = _isSearchingNearby
+                  ? _filteredToiletList.indexOf(entry)
+                  : newList.indexOf(entry);
               setState(() {
                 selectedToiletIndex = idx;
                 _tabController.animateTo(2);
-                _isSidePanelVisible = true; // 詳細表示時にサイドパネルを開く
+                _isSidePanelVisible = true;
               });
             },
           ),
@@ -114,27 +117,34 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
       setState(() {
         toiletList = newList;
         _markers = newMarkers;
+        // もし近隣検索中なら、新しいデータで再フィルタリング
+        if (_isSearchingNearby) {
+          _performFiltering();
+        }
       });
 
-      // 描画後にカメラを全マーカーにフィット
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _moveToMarkers();
+        if (!_isSearchingNearby && _mapController != null) {
+          _moveToMarkers(_markers); // 全マーカーにフィット
+        } else if (_isSearchingNearby &&
+            _mapController != null &&
+            _filteredMarkers.isNotEmpty) {
+          _moveToMarkers(_filteredMarkers); // フィルタリングされたマーカーにフィット
+        }
       });
     });
   }
 
-  // 追加: 現在位置を取得して地図を更新するメソッド
-  Future<void> _determinePosition() async {
+  Future<void> _determinePosition({bool moveCamera = true}) async {
     bool serviceEnabled;
     LocationPermission permission;
 
-    // 位置情報サービスが有効かテストします。
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      // 位置情報サービスが有効でない場合、続行できません。
-      // アプリに位置情報サービスを有効にするよう促します。
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('位置情報サービスが無効です。有効にしてください。')));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('位置情報サービスが無効です。有効にしてください。')));
+      }
       return;
     }
 
@@ -142,26 +152,25 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        // 権限が拒否された場合、続行できません。
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('位置情報の権限が拒否されました。')));
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('位置情報の権限が拒否されました。')));
+        }
         return;
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      // 権限が永久に拒否されている場合、続行できません。
-      // アプリの設定から権限を変更するようユーザーに促します。
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('位置情報の権限が永久に拒否されています。設定から変更してください。')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('位置情報の権限が永久に拒否されています。設定から変更してください。')));
+      }
       return;
     }
 
-    // ここまで到達した場合、権限が付与されており、
-    // デバイスの位置情報にアクセスできます。
     try {
       _currentPosition = await Geolocator.getCurrentPosition();
-      if (_currentPosition != null && _mapController != null) {
+      if (moveCamera && _currentPosition != null && _mapController != null) {
         _mapController!.animateCamera(
           CameraUpdate.newCameraPosition(
             CameraPosition(
@@ -172,18 +181,26 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
           ),
         );
       }
+      // 現在位置が更新されたら、もし近隣検索中なら再フィルタリング
+      if (_isSearchingNearby) {
+        _performFiltering();
+      }
     } catch (e) {
       print('現在位置の取得に失敗しました: $e');
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('現在位置の取得に失敗しました。')));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('現在位置の取得に失敗しました。')));
+      }
+    }
+    if (mounted) {
+      setState(() {}); // Update UI if needed after getting position
     }
   }
 
-  // カメラを全マーカーを囲む境界へ移動
-  void _moveToMarkers() {
-    if (_mapController == null || _markers.isEmpty) return;
-    final lats = _markers.map((m) => m.position.latitude);
-    final lngs = _markers.map((m) => m.position.longitude);
+  void _moveToMarkers(List<Marker> markersToFit) {
+    if (_mapController == null || markersToFit.isEmpty) return;
+    final lats = markersToFit.map((m) => m.position.latitude);
+    final lngs = markersToFit.map((m) => m.position.longitude);
     final bounds = LatLngBounds(
       southwest: LatLng(lats.reduce(min), lngs.reduce(min)),
       northeast: LatLng(lats.reduce(max), lngs.reduce(max)),
@@ -191,10 +208,99 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
     _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
   }
 
-  // マップコントローラ取得
+  void _performFiltering() {
+    if (_currentPosition == null) {
+      // 現在位置がなければフィルタリングできない
+      setState(() {
+        _filteredToiletList = [];
+        _filteredMarkers = [];
+        _nearbyToiletCount = 0;
+      });
+      return;
+    }
+
+    final tempFilteredList = <Map<String, dynamic>>[];
+    final tempFilteredMarkers = <Marker>[];
+
+    for (int i = 0; i < toiletList.length; i++) {
+      final toilet = toiletList[i];
+      final marker = _markers[i]; // toiletListと_markersは同じ順序と仮定
+
+      final distance = Geolocator.distanceBetween(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        toilet['lat'] as double,
+        toilet['lng'] as double,
+      );
+
+      if (distance <= _searchRadiusMeters) {
+        tempFilteredList.add(toilet);
+        tempFilteredMarkers.add(marker);
+      }
+    }
+    setState(() {
+      _filteredToiletList = tempFilteredList;
+      _filteredMarkers = tempFilteredMarkers;
+      _nearbyToiletCount = _filteredToiletList.length;
+      if (_isSearchingNearby &&
+          _mapController != null &&
+          _filteredMarkers.isNotEmpty) {
+        _moveToMarkers(_filteredMarkers);
+      } else if (_isSearchingNearby &&
+          _mapController != null &&
+          _filteredMarkers.isEmpty) {
+        // 近くにトイレがない場合、現在地にズームなど、適切な処理
+        _mapController!.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: LatLng(
+                  _currentPosition!.latitude, _currentPosition!.longitude),
+              zoom: 14, // 少し広めに表示
+            ),
+          ),
+        );
+      }
+    });
+  }
+
+  Future<void> _searchNearbyToilets() async {
+    // まず現在位置を確実に取得
+    await _determinePosition(moveCamera: false); // カメラはここでは動かさない
+
+    if (_currentPosition == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('現在位置が取得できませんでした。検索できません。')));
+      }
+      setState(() {
+        _isSearchingNearby = false; // 検索失敗
+      });
+      return;
+    }
+
+    _performFiltering();
+
+    setState(() {
+      _isSearchingNearby = true;
+      _tabController.animateTo(0);
+      _isSidePanelVisible = true;
+    });
+  }
+
+  void _clearNearbySearch() {
+    setState(() {
+      _isSearchingNearby = false;
+      _nearbyToiletCount = 0;
+      _filteredToiletList = [];
+      _filteredMarkers = [];
+      if (_mapController != null) {
+        _moveToMarkers(_markers); // 全マーカーにフィット
+      }
+    });
+  }
+
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
-    // コントローラ取得後にも一度フィット
     if (_currentPosition != null) {
       _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
@@ -206,30 +312,24 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
         ),
       );
     } else {
-      // 現在位置がまだ取得できていない場合は、登録マーカーに合わせるか、デフォルト位置のままにする
-      _moveToMarkers();
+      _moveToMarkers(_markers);
     }
   }
 
   void _onSelectToilet(int index) {
     setState(() {
+      // isSearchingNearbyに応じて、正しいリストからインデックスを取得
       selectedToiletIndex = index;
       _tabController.animateTo(2);
-      _isSidePanelVisible = true; // 詳細表示時にサイドパネルを開く
+      _isSidePanelVisible = true;
     });
   }
 
   void _onShowRegisterForm() {
     setState(() {
+      if (_isSearchingNearby) _clearNearbySearch(); // 登録時は全件表示に戻すなど
       _tabController.animateTo(1);
-      _isSidePanelVisible = true; // 登録フォーム表示時にサイドパネルを開く
-    });
-  }
-
-  void _onShowList() {
-    setState(() {
-      _tabController.animateTo(0);
-      _isSidePanelVisible = true; // リスト表示時にサイドパネルを開く
+      _isSidePanelVisible = true;
     });
   }
 
@@ -247,6 +347,10 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
 
   @override
   Widget build(BuildContext context) {
+    final displayToiletList =
+        _isSearchingNearby ? _filteredToiletList : toiletList;
+    final displayMarkers = _isSearchingNearby ? _filteredMarkers : _markers;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('トイレマップ口コミサイト'),
@@ -254,6 +358,14 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
           icon: Icon(Icons.menu),
           onPressed: _toggleSidePanel,
         ),
+        actions: [
+          if (_isSearchingNearby)
+            IconButton(
+              icon: Icon(Icons.clear_all),
+              tooltip: '近隣検索をクリア',
+              onPressed: _clearNearbySearch,
+            )
+        ],
       ),
       body: Row(
         children: [
@@ -291,15 +403,17 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                         controller: _tabController,
                         children: [
                           ToiletListView(
-                            toiletList: toiletList,
+                            toiletList: displayToiletList, // 表示リストを切り替え
                             onSelect: _onSelectToilet,
                           ),
                           ToiletRegisterForm(),
-                          selectedToiletIndex == -1
-                              ? Center(child: Text("トイレを選択してください"))
-                              : ToiletDetailPanel(
-                                  toilet: toiletList[selectedToiletIndex],
-                                ),
+                          selectedToiletIndex != -1 &&
+                                  selectedToiletIndex < displayToiletList.length
+                              ? ToiletDetailPanel(
+                                  toilet: displayToiletList[
+                                      selectedToiletIndex], // 表示リストを切り替え
+                                )
+                              : Center(child: Text("トイレを選択してください")),
                         ],
                       ),
                     ),
@@ -321,7 +435,7 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                         : LatLng(35.68, 139.76),
                     zoom: 15,
                   ),
-                  markers: Set<Marker>.of(_markers),
+                  markers: Set<Marker>.of(displayMarkers), // 表示マーカーを切り替え
                   myLocationEnabled: true,
                   zoomControlsEnabled: true,
                   padding: EdgeInsets.only(bottom: 56),
@@ -364,8 +478,10 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
             children: <Widget>[
               ElevatedButton.icon(
                 icon: Icon(Icons.search),
-                label: Text('トイレを探す'),
-                onPressed: _onShowList,
+                label: Text(_isSearchingNearby
+                    ? '近くのトイレ (${_nearbyToiletCount}件)'
+                    : '近くのトイレを探す'),
+                onPressed: _searchNearbyToilets, // _onShowList から変更
               ),
               ElevatedButton.icon(
                 icon: Icon(Icons.add_location_alt),
