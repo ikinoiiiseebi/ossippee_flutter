@@ -36,20 +36,22 @@ class ToiletDetailPanel extends StatelessWidget {
           ),
           Divider(height: 32),
           Text("口コミ", style: TextStyle(fontWeight: FontWeight.bold)),
-          ...toilet['comments']
-              .map<Widget>((c) => ListTile(
-                    leading: Icon(Icons.person),
-                    title: Text(c['user']),
-                    subtitle: Text(c['comment']),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.star, color: Colors.amber, size: 18),
-                        Text('${c['rating']}'),
-                      ],
-                    ),
-                  ))
-              .toList(),
+          ...(toilet['comments'] is List
+              ? toilet['comments']
+                  .map<Widget>((c) => ListTile(
+                        leading: Icon(Icons.person),
+                        title: Text(c['user']),
+                        subtitle: Text(c['comment']),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.star, color: Colors.amber, size: 18),
+                            Text('${c['rating']}'),
+                          ],
+                        ),
+                      ))
+                  .toList()
+              : []),
           OutlinedButton.icon(
             icon: Icon(Icons.add_comment),
             label: Text("口コミを投稿"),
