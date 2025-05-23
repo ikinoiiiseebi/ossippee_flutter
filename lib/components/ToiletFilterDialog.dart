@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
 
 // --- フィルターダイアログ ---
-class ToiletFilterDialog extends StatelessWidget {
+class ToiletFilterDialog extends StatefulWidget {
+  @override
+  _ToiletFilterDialogState createState() => _ToiletFilterDialogState();
+}
+
+class _ToiletFilterDialogState extends State<ToiletFilterDialog> {
+  bool isWashletSelected = false;
+  bool isMultipurposeSelected = false;
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -33,11 +41,22 @@ class ToiletFilterDialog extends StatelessWidget {
       actions: [
         TextButton(
           child: Text("リセット"),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            setState(() {
+              isWashletSelected = false;
+              isMultipurposeSelected = false;
+              // 他のフィルターもリセット
+            });
+          },
         ),
         ElevatedButton(
           child: Text("適用"),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            Navigator.pop(context, {
+              'isWashletSelected': isWashletSelected,
+              'isMultipurposeSelected': isMultipurposeSelected,
+            });
+          },
         ),
       ],
     );

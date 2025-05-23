@@ -3,6 +3,7 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // 追加
 
 /// Default [FirebaseOptions] for use with your Firebase apps.
 ///
@@ -52,14 +53,34 @@ class DefaultFirebaseOptions {
     }
   }
 
-  static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyAvpNMFaHANEAyRHLDuvlobJXskuF2eTwg',
-    appId: '1:750801084841:web:1ce003e0d7eaf1b957e4b8',
-    messagingSenderId: '750801084841',
-    projectId: 'ossippee-50d9a',
-    authDomain: 'ossippee-50d9a.firebaseapp.com',
-    storageBucket: 'ossippee-50d9a.firebasestorage.app',
-    measurementId: 'G-99N6Y8G4RE',
-  );
+  static FirebaseOptions get web {
+    final apiKey = dotenv.env['FIREBASE_API_KEY'];
+    final appId = dotenv.env['FIREBASE_APP_ID'];
+    final messagingSenderId = dotenv.env['FIREBASE_MESSAGING_SENDER_ID'];
+    final projectId = dotenv.env['FIREBASE_PROJECT_ID'];
+    final authDomain = dotenv.env['FIREBASE_AUTH_DOMAIN'];
+    final storageBucket = dotenv.env['FIREBASE_STORAGE_BUCKET'];
+    final measurementId = dotenv.env['FIREBASE_MEASUREMENT_ID'];
 
+    if (apiKey == null ||
+        appId == null ||
+        messagingSenderId == null ||
+        projectId == null ||
+        authDomain == null ||
+        storageBucket == null) {
+      throw Exception(
+          'Firebase environment variables are not set in .env file');
+    }
+
+    return FirebaseOptions(
+      apiKey: apiKey,
+      appId: appId,
+      messagingSenderId: messagingSenderId,
+      projectId: projectId,
+      authDomain: authDomain,
+      storageBucket: storageBucket,
+      measurementId:
+          measurementId, // measurementId は null の場合があるため、チェックから除外することも検討
+    );
+  }
 }
