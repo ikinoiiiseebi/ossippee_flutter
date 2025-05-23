@@ -47,7 +47,7 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
   bool _isSearchingNearby = false;
   List<Map<String, dynamic>> _filteredToiletList = [];
   List<Marker> _filteredMarkers = [];
-  final double _searchRadiusMeters = 1000.0; // 検索半径 (メートル)
+  final double _searchRadiusMeters = 3000.0; // 検索半径 (メートル)
 
   @override
   void initState() {
