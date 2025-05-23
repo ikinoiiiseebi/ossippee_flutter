@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -32,6 +33,9 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
 
   // Firestore から取得したトイレ情報リスト
   List<Map<String, dynamic>> toiletList = [];
+  // マーカー一覧を保持
+  List<Marker> _markers = [];
+  GoogleMapController? _mapController;
   int selectedToiletIndex = -1;
 
   @override
@@ -44,39 +48,93 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
         .collection('toilets')
         .snapshots()
         .listen((snapshot) {
-      setState(() {
-        toiletList = snapshot.docs.map((doc) {
-          final data = doc.data();
-          // 安全なパース
-          double safeLat =
-              (data['lat'] is num) ? (data['lat'] as num).toDouble() : 0.0;
-          double safeLng =
-              (data['lng'] is num) ? (data['lng'] as num).toDouble() : 0.0;
-          int safeDistance =
-              (data['distance'] is num) ? (data['distance'] as num).toInt() : 0;
-          double safeRating = (data['rating'] is num)
-              ? (data['rating'] as num).toDouble()
-              : 0.0;
-          int safeCleanliness = (data['cleanliness'] is num)
-              ? (data['cleanliness'] as num).toInt()
-              : 0;
+      final docs = snapshot.docs;
+      // 取得データをリスト／マーカーにマッピング
+      final newList = <Map<String, dynamic>>[];
+      final newMarkers = <Marker>[];
 
-          return {
-            'id': doc.id,
-            'name': data['name'] as String? ?? '',
-            'lat': safeLat,
-            'lng': safeLng,
-            'distance': safeDistance,
-            'rating': safeRating,
-            'features': List<String>.from(data['features'] ?? []),
-            'address': data['address'] as String? ?? '',
-            'cleanliness': safeCleanliness,
-            'comments': List<Map<String, dynamic>>.from(data['comments'] ?? []),
-            'images': List<String>.from(data['images'] ?? []),
-          };
-        }).toList();
+      for (var doc in docs) {
+        final data = doc.data();
+        // location フィールドを GeoPoint として取得
+        final location = data['location'] as GeoPoint?;
+        // location が null でないことを確認
+        if (location == null) continue;
+
+        // GeoPoint から緯度と経度を取得
+        final lat = location.latitude;
+        final lng = location.longitude;
+
+        final entry = {
+          'id': doc.id,
+          'name': data['name'] as String? ?? '',
+          'lat': lat, // 緯度をセット
+          'lng': lng, // 経度をセット
+          'distance':
+              data['distance'] is num ? (data['distance'] as num).toInt() : 0,
+          'rating':
+              data['rating'] is num ? (data['rating'] as num).toDouble() : 0.0,
+          'features': List<String>.from(data['features'] ?? []),
+          'address': data['address'] as String? ?? '',
+          'cleanliness': data['cleanliness'] is num
+              ? (data['cleanliness'] as num).toInt()
+              : 0,
+          'comments': List<Map<String, dynamic>>.from(data['comments'] ?? []),
+          'images': List<String>.from(data['images'] ?? []),
+        };
+        newList.add(entry);
+
+        newMarkers.add(Marker(
+          markerId: MarkerId(doc.id),
+          position: LatLng(lat, lng), // マーカーの位置をセット
+          infoWindow: InfoWindow(
+            title: entry['name'] as String?,
+            snippet: '清潔度: ${entry['cleanliness']}',
+            onTap: () {
+              // 情報タブに遷移＋選択
+              final idx = newList.indexOf(entry);
+              setState(() {
+                selectedToiletIndex = idx;
+                _tabController.animateTo(2);
+              });
+            },
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            ((entry['cleanliness'] ?? 0) as int) >= 4
+                ? BitmapDescriptor.hueBlue
+                : BitmapDescriptor.hueRed,
+          ),
+        ));
+      }
+
+      setState(() {
+        toiletList = newList;
+        _markers = newMarkers;
+      });
+
+      // 描画後にカメラを全マーカーにフィット
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _moveToMarkers();
       });
     });
+  }
+
+  // カメラを全マーカーを囲む境界へ移動
+  void _moveToMarkers() {
+    if (_mapController == null || _markers.isEmpty) return;
+    final lats = _markers.map((m) => m.position.latitude);
+    final lngs = _markers.map((m) => m.position.longitude);
+    final bounds = LatLngBounds(
+      southwest: LatLng(lats.reduce(min), lngs.reduce(min)),
+      northeast: LatLng(lats.reduce(max), lngs.reduce(max)),
+    );
+    _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
+  }
+
+  // マップコントローラ取得
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+    // コントローラ取得後にも一度フィット
+    _moveToMarkers();
   }
 
   void _onSelectToilet(int index) {
@@ -86,13 +144,8 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
     });
   }
 
-  void _onShowRegisterForm() {
-    _tabController.animateTo(1);
-  }
-
-  void _onShowList() {
-    _tabController.animateTo(0);
-  }
+  void _onShowRegisterForm() => _tabController.animateTo(1);
+  void _onShowList() => _tabController.animateTo(0);
 
   @override
   void dispose() {
@@ -163,14 +216,11 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                   child: TabBarView(
                     controller: _tabController,
                     children: [
-                      // ① 検索結果リスト
                       ToiletListView(
                         toiletList: toiletList,
                         onSelect: _onSelectToilet,
                       ),
-                      // ② トイレ登録フォーム
                       ToiletRegisterForm(),
-                      // ③ 詳細パネル
                       selectedToiletIndex == -1
                           ? Center(child: Text("トイレを選択してください"))
                           : ToiletDetailPanel(
@@ -188,32 +238,15 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
             child: Stack(
               children: [
                 GoogleMap(
+                  onMapCreated: _onMapCreated,
                   initialCameraPosition: CameraPosition(
                     target: LatLng(35.68, 139.76),
                     zoom: 15,
                   ),
-                  markers: toiletList.asMap().entries.map((entry) {
-                    final idx = entry.key;
-                    final t = entry.value;
-                    return Marker(
-                      markerId: MarkerId(t['id']),
-                      position: LatLng(t['lat'], t['lng']),
-                      infoWindow: InfoWindow(
-                        title: t['name'],
-                        snippet: '清潔度: ${t['cleanliness']}',
-                        onTap: () => _onSelectToilet(idx),
-                      ),
-                      icon: BitmapDescriptor.defaultMarkerWithHue(
-                        t['cleanliness'] >= 4
-                            ? BitmapDescriptor.hueBlue
-                            : BitmapDescriptor.hueRed,
-                      ),
-                    );
-                  }).toSet(),
+                  markers: Set<Marker>.of(_markers),
                   myLocationEnabled: true,
                   zoomControlsEnabled: true,
                 ),
-                // 現在地ボタン
                 Positioned(
                   top: 24,
                   right: 24,
