@@ -351,18 +351,22 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                 }
 
                 print(
-                    '「次へ」ボタンが押されました。FirestoreのgameStateを更新します。userId: $userId');
+                    '「次へ」ボタンが押されました。FirestoreのgameStateとfoundToiletを更新します。userId: $userId, count: $count');
                 FirebaseFirestore.instance
                     .collection('users')
                     .doc(userId)
-                    .update({'gameState': 'react'}).then((_) {
-                  print('FirestoreのgameStateをreactに更新しました。');
+                    .update({
+                  'gameState': 'react',
+                  'foundToilet': count // 見つかったトイレの件数を保存
+                }).then((_) {
+                  print(
+                      'FirestoreのgameStateをreactに、foundToiletを$count に更新しました。');
                   ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('gameStateを更新しました。')));
+                      SnackBar(content: Text('gameStateと発見数を更新しました。')));
                 }).catchError((error) {
-                  print('FirestoreのgameState更新に失敗しました: $error');
+                  print('Firestoreの更新に失敗しました: $error');
                   ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('gameStateの更新に失敗しました: $error')));
+                      SnackBar(content: Text('Firestoreの更新に失敗しました: $error')));
                 });
                 Navigator.of(context).pop(); // ダイアログを閉じる
               },
