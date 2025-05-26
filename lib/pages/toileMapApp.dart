@@ -363,6 +363,7 @@ class _ToiletMapHomePageState extends State<ToiletMapHomePage>
                       'FirestoreのgameStateをreactに、foundToiletを$count に更新しました。');
                   ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('gameStateと発見数を更新しました。')));
+                  Navigator.of(context).pushReplacementNamed('/react');
                 }).catchError((error) {
                   print('Firestoreの更新に失敗しました: $error');
                   ScaffoldMessenger.of(context).showSnackBar(
